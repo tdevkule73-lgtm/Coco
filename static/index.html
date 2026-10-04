@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Ozz - Hum. Train. Discover.</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0d17;
+            --card-bg: rgba(22, 26, 46, 0.7);
+            --accent-glow: #7c3aed;
+            --accent-cyan: #06b6d4;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --danger: #ef4444;
+            --spotify-green: #1db954;
+            --youtube-red: #ff0000;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+            padding: 30px 20px;
+            background: radial-gradient(circle at 50% 20%, rgba(124, 58, 237, 0.15), transparent 60%),
+                        radial-gradient(circle at 80% 80%, rgba(6, 182, 212, 0.1), transparent 50%);
+        }
+
+        .container { width: 100%; max-width: 440px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        header { text-align: center; }
+        header h1 { font-size: 2.2rem; font-weight: 800; background: linear-gradient(135deg, #a855f7, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        header p { color: var(--text-secondary); font-size: 0.9rem; font-weight: 500; margin-top: 4px; }
+
+        .tab-group { display: flex; background: rgba(255, 255, 255, 0.05); padding: 4px; border-radius: 12px; width: 100%; border: 1px solid rgba(255, 255, 255, 0.1); }
+        .tab-btn { flex: 1; padding: 10px 4px; border: none; background: transparent; color: var(--text-secondary); font-weight: 600; font-size: 0.8rem; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; }
+        .tab-btn.active { background: var(--accent-glow); color: white; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4); }
+
+        .mic-section { display: flex; flex-direction: column; align-items: center; width: 100%; gap: 16px; }
+        .mic-wrapper { position: relative; width: 150px; height: 150px; display: flex; align-items: center; justify-content: center; }
+        .pulse-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle, rgba(124, 58, 237, 0.4) 0%, rgba(6, 182, 212, 0) 70%); opacity: 0; pointer-events: none; }
+        .mic-wrapper.recording .pulse-ring { animation: pulse 1.6s infinite ease-out; opacity: 1; }
+        @keyframes pulse { 0% { transform: scale(0.85); opacity: 0.8; } 100% { transform: scale(1.4); opacity: 0; } }
+
+        .mic-btn { width: 100px; height: 100px; border-radius: 50%; border: none; background: linear-gradient(135deg, #7c3aed, #06b6d4); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(124, 58, 237, 0.4); z-index: 2; }
+        .mic-btn svg { width: 40px; height: 40px; fill: currentColor; }
+
+        .card-box { width: 100%; background: var(--card-bg); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 20px; display: none; flex-direction: column; gap: 12px; }
+        .input-group { display: flex; flex-direction: column; gap: 6px; }
+        .input-group label { font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; }
+        .input-group input { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.15); padding: 10px 14px; border-radius: 10px; color: white; font-size: 0.9rem; outline: none; }
+
+        .file-dropzone { border: 2px dashed rgba(255, 255, 255, 0.2); padding: 16px; border-radius: 12px; text-align: center; cursor: pointer; background: rgba(0, 0, 0, 0.2); color: var(--text-secondary); font-size: 0.85rem; }
+        .file-dropzone input { display: none; }
+
+        .action-btn { width: 100%; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #7c3aed, #06b6d4); color: white; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
+        .status-text { font-size: 0.95rem; font-weight: 600; color: var(--text-secondary); text-align: center; min-height: 24px; }
+        .error-message { color: var(--danger); font-size: 0.85rem; text-align: center; display: none; }
+
+        .result-card { width: 100%; background: var(--card-bg); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 20px; display: none; flex-direction: column; align-items: center; gap: 14px; }
+        .cover-art { width: 150px; height: 150px; border-radius: 14px; object-fit: cover; }
+        .link-group { display: flex; gap: 10px; width: 100%; }
+        .spotify-btn { flex: 1; padding: 10px; border-radius: 10px; background-color: var(--spotify-green); color: #000; font-weight: 700; text-decoration: none; text-align: center; font-size: 0.85rem; }
+        .youtube-btn { flex: 1; padding: 10px; border-radius: 10px; background-color: var(--youtube-red); color: #fff; font-weight: 700; text-decoration: none; text-align: center; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Music Ozz</h1>
+            <p>Hum. Train. Discover.</p>
+        </header>
+
+        <div class="tab-group">
+            <button class="tab-btn active" id="tabIdentify" onclick="switchTab('identify')">🎤 Hum & Find</button>
+            <button class="tab-btn" id="tabTrain" onclick="switchTab('train')">🎓 Train Voice</button>
+            <button class="tab-btn" id="tabUpload" onclick="switchTab('upload')">➕ Add Song</button>
+        </div>
+
+        <div class="mic-section" id="identifySection">
+            <div class="mic-wrapper" id="micWrapper">
+                <div class="pulse-ring"></div>
+                <button class="mic-btn" id="recordBtn">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="card-box" id="trainSection">
+            <div class="input-group">
+                <label>Select Song ID to Train</label>
+                <input type="number" id="trainSongIdInput" placeholder="e.g. 100001">
+            </div>
+            <p style="font-size:0.8rem; color:var(--text-secondary); text-align:center;">
+                Hum the melody for 8 seconds to link your voice signature to this song.
+            </p>
+            <button class="action-btn" id="trainRecordBtn">🔴 Record Voice Sample</button>
+        </div>
+
+        <div class="card-box" id="uploadSection">
+            <div class="input-group">
+                <label>Song Title</label>
+                <input type="text" id="songTitleInput" placeholder="e.g. Avengers Theme">
+            </div>
+            <div class="input-group">
+                <label>Artist Name</label>
+                <input type="text" id="artistInput" placeholder="e.g. Alan Silvestri">
+            </div>
+            <div class="file-dropzone" onclick="document.getElementById('fileInput').click()">
+                <span id="fileNameDisplay">📁 Tap to choose MP3 file</span>
+                <input type="file" id="fileInput" accept="audio/*" onchange="updateFileName()">
+            </div>
+            <button class="action-btn" onclick="uploadSong()">Upload MP3</button>
+        </div>
+
+        <div class="status-text" id="statusText">Tap microphone to start humming</div>
+        <div class="error-message" id="errorMessage"></div>
+
+        <div class="result-card" id="resultCard">
+            <img id="coverArt" class="cover-art" src="" alt="Album Cover">
+            <div style="text-align: center;">
+                <div style="font-size:1.2rem; font-weight:700;" id="songTitle">Song Title</div>
+                <div style="font-size:0.9rem; color:var(--text-secondary);" id="songArtist">Artist Name</div>
+            </div>
+            <div class="link-group">
+                <a id="spotifyBtn" class="spotify-btn" href="#" target="_blank" rel="noopener">Spotify</a>
+                <a id="youtubeBtn" class="youtube-btn" href="#" target="_blank" rel="noopener">YouTube</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder, audioChunks = [], isRecording = false;
+
+        function switchTab(mode) {
+            document.getElementById('tabIdentify').classList.toggle('active', mode === 'identify');
+            document.getElementById('tabTrain').classList.toggle('active', mode === 'train');
+            document.getElementById('tabUpload').classList.toggle('active', mode === 'upload');
+
+            document.getElementById('identifySection').style.display = mode === 'identify' ? 'flex' : 'none';
+            document.getElementById('trainSection').style.display = mode === 'train' ? 'flex' : 'none';
+            document.getElementById('uploadSection').style.display = mode === 'upload' ? 'flex' : 'none';
+
+            document.getElementById('resultCard').style.display = 'none';
+            document.getElementById('errorMessage').style.display = 'none';
+
+            if (mode === 'identify') document.getElementById('statusText').innerText = 'Tap microphone to start humming';
+            if (mode === 'train') document.getElementById('statusText').innerText = 'Enter Song ID and record voice sample';
+            if (mode === 'upload') document.getElementById('statusText').innerText = 'Fill details and select MP3 file';
+        }
+
+        document.getElementById("recordBtn").addEventListener("click", () => startVoiceRecording('identify'));
+        document.getElementById("trainRecordBtn").addEventListener("click", () => startVoiceRecording('train'));
+
+        async function startVoiceRecording(purpose) {
+            if (isRecording) return stopVoiceRecording();
+
+            const songId = document.getElementById("trainSongIdInput").value;
+            if (purpose === 'train' && !songId) {
+                return showError("Please enter a valid Song ID first.");
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                mediaRecorder.onstop = () => handleRecordingComplete(purpose, songId);
+                mediaRecorder.start();
+                isRecording = true;
+
+                if (purpose === 'identify') document.getElementById("micWrapper").classList.add("recording");
+                if (purpose === 'train') document.getElementById("trainRecordBtn").innerText = "⏹️ Stop Recording";
+
+                document.getElementById("statusText").innerText = "Listening... Hum your melody now!";
+                setTimeout(() => { if (isRecording) stopVoiceRecording(); }, 8000);
+
+            } catch (err) {
+                showError("Microphone access denied.");
+            }
+        }
+
+        function stopVoiceRecording() {
+            if (!mediaRecorder || !isRecording) return;
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            isRecording = false;
+
+            document.getElementById("micWrapper").classList.remove("recording");
+            document.getElementById("trainRecordBtn").innerText = "🔴 Record Voice Sample";
+            document.getElementById("statusText").innerText = "Processing with AI...";
+        }
+
+        async function handleRecordingComplete(purpose, songId) {
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+
+            if (purpose === 'identify') {
+                formData.append("file", blob, "hum.webm");
+                try {
+                    const res = await fetch("/api/v1/identify", { method: "POST", body: formData });
+                    const data = await res.json();
+                    if (data.matched && data.song) {
+                        document.getElementById("statusText").innerText = "Match Found!";
+                        document.getElementById("coverArt").src = data.song.cover_art_url || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80";
+                        document.getElementById("songTitle").innerText = data.song.title;
+                        document.getElementById("songArtist").innerText = data.song.artist;
+                        document.getElementById("spotifyBtn").href = data.song.spotify_url || "#";
+                        document.getElementById("youtubeBtn").href = data.song.youtube_url || "#";
+                        document.getElementById("resultCard").style.display = "flex";
+                    } else {
+                        showError("No matching song found.");
+                    }
+                } catch (e) { showError("Error connecting to server."); }
+            } 
+            else if (purpose === 'train') {
+                formData.append("file", blob, "voice_sample.webm");
+                formData.append("song_id", songId);
+                try {
+                    const res = await fetch("/api/v1/songs/enroll-hum", { method: "POST", body: formData });
+                    const data = await res.json();
+                    if (res.ok) {
+                        document.getElementById("statusText").innerText = "✅ Trained! Voice print memorized!";
+                    } else { showError(data.detail || "Training failed."); }
+                } catch (e) { showError("Failed to train voice."); }
+            }
+        }
+
+        function updateFileName() {
+            const file = document.getElementById("fileInput").files[0];
+            if (file) document.getElementById("fileNameDisplay").innerText = "🎵 " + file.name;
+        }
+
+        async function uploadSong() {
+            const file = document.getElementById("fileInput").files[0];
+            const title = document.getElementById("songTitleInput").value;
+            const artist = document.getElementById("artistInput").value;
+
+            if (!file) return showError("Select an MP3 file first.");
+            if (!title) return showError("Enter song title.");
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("title", title);
+            formData.append("artist", artist || "Unknown Artist");
+
+            document.getElementById("statusText").innerText = "Uploading MP3...";
+
+            try {
+                const res = await fetch("/api/v1/songs/index", { method: "POST", body: formData });
+                const data = await res.json();
+                if (res.ok) {
+                    document.getElementById("statusText").innerText = `✅ Song added! ID: ${data.song_id}`;
+                } else { showError(data.detail || "Upload failed."); }
+            } catch (e) { showError("Upload failed."); }
+        }
+
+        function showError(msg) {
+            const err = document.getElementById("errorMessage");
+            err.innerText = msg; err.style.display = "block";
+        }
+    </script>
+</body>
+      </html>
+          
