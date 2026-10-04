@@ -28,9 +28,15 @@ SEARCH_QUERIES = [
 class AutonomousLearner:
     def __init__(self):
         os.makedirs(os.path.dirname(SQLITE_DB_PATH) or ".", exist_ok=True)
-        self.session = ort.InferenceSession(ONNX_MODEL_PATH, providers=["CPUExecutionProvider"])
-        self.input_name = self.session.get_inputs()[0].name
         
+        if os.path.exists(ONNX_MODEL_PATH):
+            self.session = ort.InferenceSession(ONNX_MODEL_PATH, providers=["CPUExecutionProvider"])
+            self.input_name = self.session.get_inputs()[0].name
+        else:
+            self.session = None
+            self.input_name = None
+            print(f"[Warning] ONNX model not found at {ONNX_MODEL_PATH}. Continuous learner idling until model is provided.")
+
         if os.path.exists(FAISS_INDEX_PATH):
             self.faiss_index = faiss.read_index(FAISS_INDEX_PATH)
         else:
@@ -38,6 +44,8 @@ class AutonomousLearner:
             self.faiss_index = faiss.IndexIDMap2(base_index)
 
     def extract_vector(self, audio_bytes: bytes) -> np.ndarray:
+        if not self.session:
+            raise RuntimeError("ONNX model session not initialized.")
         y, sr = librosa.load(io.BytesIO(audio_bytes), sr=22050, duration=10.0, mono=True)
         if len(y) == 0:
             raise ValueError("Empty audio stream.")
@@ -82,7 +90,7 @@ def fetch_all_candidate_tracks(queries: list):
                         "view_count": view_count
                     })
             except Exception as e:
-                print(f"⚠️ Search error for query '{query}': {e}")
+                print(f"⚠️️ Search error for query '{query}': {e}")
 
     all_candidates.sort(key=lambda x: x["view_count"], reverse=True)
     return all_candidates
@@ -115,6 +123,12 @@ def run_autonomous_loop():
             )
         """)
         conn.commit()
+
+        if not learner.session:
+            print("⚠️ Waiting for ONNX encoder model... Idle loop active.")
+            conn.close()
+            time.sleep(SLEEP_BETWEEN_CYCLES_SEC)
+            continue
 
         print(f"\n🔍 Crawling tracks across {len(SEARCH_QUERIES)} search queries...")
         candidates = fetch_all_candidate_tracks(SEARCH_QUERIES)
@@ -158,3 +172,4 @@ def run_autonomous_loop():
 
 if __name__ == "__main__":
     run_autonomous_loop()
+    
