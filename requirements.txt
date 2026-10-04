@@ -3,7 +3,7 @@ uvicorn==0.28.0
 onnxruntime==1.17.1
 faiss-cpu==1.8.0
 librosa==0.10.1
-google-genai==0.1.1
+google-genai>=0.1.0
 requests==2.31.0
 yt-dlp>=2024.03.10
 redis==5.0.3
