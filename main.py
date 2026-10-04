@@ -104,8 +104,15 @@ class SearchEngine:
         self.sqlite_db_path = sqlite_db_path
 
         self.ensure_db_and_index()
-        self.ort_session = ort.InferenceSession(self.onnx_path, providers=["CPUExecutionProvider"])
-        self.input_name = self.ort_session.get_inputs()[0].name
+
+        if os.path.exists(self.onnx_path):
+            self.ort_session = ort.InferenceSession(self.onnx_path, providers=["CPUExecutionProvider"])
+            self.input_name = self.ort_session.get_inputs()[0].name
+        else:
+            self.ort_session = None
+            self.input_name = None
+            print(f"[Warning] ONNX model not found at {self.onnx_path}. Running in Gemini-only fallback mode.")
+
         self.faiss_index = faiss.read_index(self.faiss_index_path)
         self.gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -144,6 +151,8 @@ class SearchEngine:
         return norm_spec[np.newaxis, np.newaxis, :, :].astype(np.float32)
 
     def run_inference(self, input_tensor: np.ndarray) -> np.ndarray:
+        if not self.ort_session:
+            raise RuntimeError("ONNX model session not initialized.")
         outputs = self.ort_session.run(None, {self.input_name: input_tensor})
         return outputs[0]
 
@@ -178,7 +187,7 @@ class SearchEngine:
         conn.commit()
         conn.close()
 
-        if audio_bytes:
+        if audio_bytes and self.ort_session:
             try:
                 input_tensor = self.process_audio(audio_bytes)
                 embedding = self.run_inference(input_tensor)
@@ -210,7 +219,7 @@ def background_internet_enrichment_task(song_id: int, title: str, artist: str):
     conn.commit()
     conn.close()
 
-    if spotify_data["preview_url"] and search_engine:
+    if spotify_data["preview_url"] and search_engine and search_engine.ort_session:
         try:
             res = requests.get(spotify_data["preview_url"], timeout=10)
             if res.status_code == 200:
@@ -269,26 +278,27 @@ async def identify_song(background_tasks: BackgroundTasks, response: Response, f
 
     response.headers["X-Cache"] = "MISS"
 
-    try:
-        input_tensor = await asyncio.to_thread(search_engine.process_audio, audio_bytes)
-        embedding = await asyncio.to_thread(search_engine.run_inference, input_tensor)
-        song_id, confidence = await asyncio.to_thread(search_engine.search_faiss, embedding)
-        song_info = await asyncio.to_thread(search_engine.get_song_metadata, song_id)
+    if search_engine and search_engine.ort_session:
+        try:
+            input_tensor = await asyncio.to_thread(search_engine.process_audio, audio_bytes)
+            embedding = await asyncio.to_thread(search_engine.run_inference, input_tensor)
+            song_id, confidence = await asyncio.to_thread(search_engine.search_faiss, embedding)
+            song_info = await asyncio.to_thread(search_engine.get_song_metadata, song_id)
 
-        if confidence >= SIMILARITY_THRESHOLD and song_info is not None:
-            match_response = MatchResponse(
-                matched=True,
-                confidence_score=round(confidence, 4),
-                song=song_info,
-                message="Matched from local memory!"
-            )
-            try:
-                await redis_client.setex(cache_key, CACHE_TTL_SECONDS, match_response.model_dump_json())
-            except Exception:
-                pass
-            return match_response
-    except Exception as e:
-        print(f"[Info] Local search skipped/failed: {e}")
+            if confidence >= SIMILARITY_THRESHOLD and song_info is not None:
+                match_response = MatchResponse(
+                    matched=True,
+                    confidence_score=round(confidence, 4),
+                    song=song_info,
+                    message="Matched from local memory!"
+                )
+                try:
+                    await redis_client.setex(cache_key, CACHE_TTL_SECONDS, match_response.model_dump_json())
+                except Exception:
+                    pass
+                return match_response
+        except Exception as e:
+            print(f"[Info] Local search skipped/failed: {e}")
 
     mime_type = file.content_type if file.content_type in ALLOWED_MIME_TYPES else "audio/webm"
     
@@ -348,17 +358,17 @@ async def upload_and_index_song(
         raise HTTPException(status_code=400, detail="Empty audio file.")
 
     try:
-        input_tensor = await asyncio.to_thread(search_engine.process_audio, audio_bytes)
-        embedding = await asyncio.to_thread(search_engine.run_inference, input_tensor)
-
-        faiss.normalize_L2(embedding)
         conn = sqlite3.connect(SQLITE_DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT COALESCE(MAX(song_id), 100000) + 1 FROM songs")
         new_song_id = cursor.fetchone()[0]
 
-        search_engine.faiss_index.add_with_ids(embedding, np.array([new_song_id], dtype=np.int64))
-        faiss.write_index(search_engine.faiss_index, FAISS_INDEX_PATH)
+        if search_engine and search_engine.ort_session:
+            input_tensor = await asyncio.to_thread(search_engine.process_audio, audio_bytes)
+            embedding = await asyncio.to_thread(search_engine.run_inference, input_tensor)
+            faiss.normalize_L2(embedding)
+            search_engine.faiss_index.add_with_ids(embedding, np.array([new_song_id], dtype=np.int64))
+            faiss.write_index(search_engine.faiss_index, FAISS_INDEX_PATH)
 
         cursor.execute(
             "INSERT INTO songs (song_id, title, artist, file_path) VALUES (?, ?, ?, ?)",
@@ -386,6 +396,9 @@ async def enroll_user_hum(file: UploadFile = File(...), song_id: int = Form(...)
     if not song:
         raise HTTPException(status_code=404, detail="Song ID not found.")
 
+    if not (search_engine and search_engine.ort_session):
+        raise HTTPException(status_code=400, detail="Local encoder model unavailable.")
+
     try:
         input_tensor = await asyncio.to_thread(search_engine.process_audio, audio_bytes)
         embedding = await asyncio.to_thread(search_engine.run_inference, input_tensor)
@@ -400,3 +413,4 @@ async def enroll_user_hum(file: UploadFile = File(...), song_id: int = Form(...)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+        
