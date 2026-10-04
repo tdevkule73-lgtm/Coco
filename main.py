@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 
-MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_FILE_SIZE = 15 * 1024 * 1024
 ALLOWED_MIME_TYPES = {"audio/wav", "audio/mpeg", "audio/x-m4a", "audio/ogg", "audio/webm", "audio/flac"}
 SIMILARITY_THRESHOLD = 0.55
 CACHE_TTL_SECONDS = 86400
@@ -49,6 +49,17 @@ class MatchResponse(BaseModel):
     confidence_score: float = Field(..., example=0.88)
     song: Optional[SongMetadata] = None
     message: str = Field(..., example="Song identified successfully!")
+
+def get_audio_stream_from_url(video_url: str) -> bytes:
+    import yt_dlp
+    ydl_opts = {'format': 'bestaudio/best', 'quiet': True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(video_url, download=False)
+        audio_url = info.get('url')
+        if audio_url:
+            res = requests.get(audio_url, stream=True, timeout=15)
+            return res.content
+    raise ValueError("Audio stream unavailable from provided URL.")
 
 class InternetAutoLearner:
     @staticmethod
@@ -175,14 +186,14 @@ class SearchEngine:
             spotify_url=row[5], youtube_url=row[6], source="local"
         )
 
-    def save_song_to_local(self, song_id: int, title: str, artist: str, audio_bytes: Optional[bytes] = None) -> SongMetadata:
+    def save_song_to_local(self, song_id: int, title: str, artist: str, audio_bytes: Optional[bytes] = None, song_url: str = "") -> SongMetadata:
         conn = sqlite3.connect(self.sqlite_db_path)
         cursor = conn.cursor()
-        yt_url = InternetAutoLearner.generate_youtube_search_url(title, artist)
+        yt_url = song_url or InternetAutoLearner.generate_youtube_search_url(title, artist)
 
         cursor.execute(
-            "INSERT OR REPLACE INTO songs (song_id, title, artist, youtube_url) VALUES (?, ?, ?, ?)",
-            (song_id, title, artist, yt_url)
+            "INSERT OR REPLACE INTO songs (song_id, title, artist, youtube_url, file_path) VALUES (?, ?, ?, ?, ?)",
+            (song_id, title, artist, yt_url, "url_indexed" if song_url else "local")
         )
         conn.commit()
         conn.close()
@@ -252,7 +263,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="Music Ozz API", version="1.8.0", lifespan=lifespan)
+app = FastAPI(title="Music Ozz API", version="1.9.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", response_class=FileResponse)
@@ -349,35 +360,39 @@ async def identify_song(background_tasks: BackgroundTasks, response: Response, f
 
 @app.post("/api/v1/songs/index")
 async def upload_and_index_song(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    song_url: Optional[str] = Form(None),
     title: str = Form(...),
-    artist: str = Form("Unknown Artist")
+    artist: str = Form("Unknown Artist"),
+    background_tasks: BackgroundTasks = BackgroundTasks()
 ):
-    audio_bytes = await file.read()
-    if len(audio_bytes) == 0:
-        raise HTTPException(status_code=400, detail="Empty audio file.")
+    if not file and not song_url:
+        raise HTTPException(status_code=400, detail="Provide either a song URL or an audio file.")
+
+    audio_bytes = None
+
+    if song_url and song_url.strip():
+        try:
+            audio_bytes = await asyncio.to_thread(get_audio_stream_from_url, song_url.strip())
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to fetch audio from link: {str(e)}")
+    elif file:
+        audio_bytes = await file.read()
+
+    if not audio_bytes or len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Audio content is empty.")
 
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT COALESCE(MAX(song_id), 100000) + 1 FROM songs")
         new_song_id = cursor.fetchone()[0]
-
-        if search_engine and search_engine.ort_session:
-            input_tensor = await asyncio.to_thread(search_engine.process_audio, audio_bytes)
-            embedding = await asyncio.to_thread(search_engine.run_inference, input_tensor)
-            faiss.normalize_L2(embedding)
-            search_engine.faiss_index.add_with_ids(embedding, np.array([new_song_id], dtype=np.int64))
-            faiss.write_index(search_engine.faiss_index, FAISS_INDEX_PATH)
-
-        cursor.execute(
-            "INSERT INTO songs (song_id, title, artist, file_path) VALUES (?, ?, ?, ?)",
-            (new_song_id, title.strip(), artist.strip(), file.filename)
-        )
-        conn.commit()
         conn.close()
 
-        return {"status": "success", "message": f"Successfully indexed '{title}'", "song_id": new_song_id}
+        saved_song = search_engine.save_song_to_local(new_song_id, title.strip(), artist.strip(), audio_bytes, song_url or "")
+        background_tasks.add_task(background_internet_enrichment_task, new_song_id, title.strip(), artist.strip())
+
+        return {"status": "success", "message": f"Successfully learned '{title}' into AI memory!", "song_id": new_song_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to index song: {str(e)}")
 
@@ -413,4 +428,4 @@ async def enroll_user_hum(file: UploadFile = File(...), song_id: int = Form(...)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-        
+            
