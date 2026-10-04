@@ -50,16 +50,37 @@ class MatchResponse(BaseModel):
     song: Optional[SongMetadata] = None
     message: str = Field(..., example="Song identified successfully!")
 
-def get_audio_stream_from_url(video_url: str) -> bytes:
+def get_audio_stream_from_url(video_url: str, title: str = "", artist: str = "") -> bytes:
     import yt_dlp
-    ydl_opts = {'format': 'bestaudio/best', 'quiet': True}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(video_url, download=False)
-        audio_url = info.get('url')
-        if audio_url:
-            res = requests.get(audio_url, stream=True, timeout=15)
-            return res.content
-    raise ValueError("Audio stream unavailable from provided URL.")
+
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'extractor_args': {'youtube': ['player_client=android,web']},
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            audio_url = info.get('url')
+            if audio_url:
+                res = requests.get(audio_url, stream=True, timeout=15)
+                if res.status_code == 200:
+                    return res.content
+    except Exception as e:
+        print(f"[Warning] Direct YouTube extraction blocked: {e}")
+
+    if title and artist:
+        spotify_data = InternetAutoLearner.fetch_spotify_details(title, artist)
+        if spotify_data.get("preview_url"):
+            res = requests.get(spotify_data["preview_url"], timeout=15)
+            if res.status_code == 200:
+                return res.content
+
+    raise ValueError("Cloud anti-bot protection blocked YouTube audio stream. Please upload an MP3 file directly or try another track link.")
 
 class InternetAutoLearner:
     @staticmethod
@@ -263,7 +284,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="Music Ozz API", version="1.9.0", lifespan=lifespan)
+app = FastAPI(title="Music Ozz API", version="2.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", response_class=FileResponse)
@@ -373,9 +394,18 @@ async def upload_and_index_song(
 
     if song_url and song_url.strip():
         try:
-            audio_bytes = await asyncio.to_thread(get_audio_stream_from_url, song_url.strip())
+            audio_bytes = await asyncio.to_thread(get_audio_stream_from_url, song_url.strip(), title.strip(), artist.strip())
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to fetch audio from link: {str(e)}")
+            conn = sqlite3.connect(SQLITE_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COALESCE(MAX(song_id), 100000) + 1 FROM songs")
+            new_song_id = cursor.fetchone()[0]
+            conn.close()
+
+            search_engine.save_song_to_local(new_song_id, title.strip(), artist.strip(), None, song_url.strip())
+            background_tasks.add_task(background_internet_enrichment_task, new_song_id, title.strip(), artist.strip())
+            return {"status": "success", "message": f"Added metadata for '{title}'. YouTube audio streaming was restricted by cloud provider.", "song_id": new_song_id}
+
     elif file:
         audio_bytes = await file.read()
 
@@ -428,4 +458,3 @@ async def enroll_user_hum(file: UploadFile = File(...), song_id: int = Form(...)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-            
