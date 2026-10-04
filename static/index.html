@@ -55,7 +55,7 @@
         .input-group label { font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; }
         .input-group input { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.15); padding: 10px 14px; border-radius: 10px; color: white; font-size: 0.9rem; outline: none; }
 
-        .file-dropzone { border: 2px dashed rgba(255, 255, 255, 0.2); padding: 16px; border-radius: 12px; text-align: center; cursor: pointer; background: rgba(0, 0, 0, 0.2); color: var(--text-secondary); font-size: 0.85rem; }
+        .file-dropzone { border: 2px dashed rgba(255, 255, 255, 0.2); padding: 14px; border-radius: 12px; text-align: center; cursor: pointer; background: rgba(0, 0, 0, 0.2); color: var(--text-secondary); font-size: 0.85rem; }
         .file-dropzone input { display: none; }
 
         .action-btn { width: 100%; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #7c3aed, #06b6d4); color: white; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
@@ -109,17 +109,22 @@
         <div class="card-box" id="uploadSection">
             <div class="input-group">
                 <label>Song Title</label>
-                <input type="text" id="songTitleInput" placeholder="e.g. Avengers Theme">
+                <input type="text" id="songTitleInput" placeholder="e.g. Tum Hi Ho">
             </div>
             <div class="input-group">
                 <label>Artist Name</label>
-                <input type="text" id="artistInput" placeholder="e.g. Alan Silvestri">
+                <input type="text" id="artistInput" placeholder="e.g. Arijit Singh">
             </div>
+            <div class="input-group">
+                <label>Paste Song Link (YouTube / Web URL)</label>
+                <input type="text" id="songUrlInput" placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+            <div style="text-align:center; font-size:0.8rem; color:var(--text-secondary);">— OR —</div>
             <div class="file-dropzone" onclick="document.getElementById('fileInput').click()">
-                <span id="fileNameDisplay">📁 Tap to choose MP3 file</span>
+                <span id="fileNameDisplay">📁 Choose MP3 File (Optional)</span>
                 <input type="file" id="fileInput" accept="audio/*" onchange="updateFileName()">
             </div>
-            <button class="action-btn" onclick="uploadSong()">Upload MP3</button>
+            <button class="action-btn" onclick="uploadSong()">Learn Song into AI Memory</button>
         </div>
 
         <div class="status-text" id="statusText">Tap microphone to start humming</div>
@@ -155,7 +160,7 @@
 
             if (mode === 'identify') document.getElementById('statusText').innerText = 'Tap microphone to start humming';
             if (mode === 'train') document.getElementById('statusText').innerText = 'Enter Song ID and record voice sample';
-            if (mode === 'upload') document.getElementById('statusText').innerText = 'Fill details and select MP3 file';
+            if (mode === 'upload') document.getElementById('statusText').innerText = 'Paste YouTube link or upload MP3 file';
         }
 
         document.getElementById("recordBtn").addEventListener("click", () => startVoiceRecording('identify'));
@@ -242,26 +247,28 @@
 
         async function uploadSong() {
             const file = document.getElementById("fileInput").files[0];
+            const songUrl = document.getElementById("songUrlInput").value;
             const title = document.getElementById("songTitleInput").value;
             const artist = document.getElementById("artistInput").value;
 
-            if (!file) return showError("Select an MP3 file first.");
-            if (!title) return showError("Enter song title.");
+            if (!songUrl && !file) return showError("Please paste a song link or choose an MP3 file.");
+            if (!title) return showError("Please enter the song title.");
 
             const formData = new FormData();
-            formData.append("file", file);
+            if (file) formData.append("file", file);
+            if (songUrl) formData.append("song_url", songUrl);
             formData.append("title", title);
             formData.append("artist", artist || "Unknown Artist");
 
-            document.getElementById("statusText").innerText = "Uploading MP3...";
+            document.getElementById("statusText").innerText = "Downloading audio & training AI memory...";
 
             try {
                 const res = await fetch("/api/v1/songs/index", { method: "POST", body: formData });
                 const data = await res.json();
                 if (res.ok) {
-                    document.getElementById("statusText").innerText = `✅ Song added! ID: ${data.song_id}`;
-                } else { showError(data.detail || "Upload failed."); }
-            } catch (e) { showError("Upload failed."); }
+                    document.getElementById("statusText").innerText = `✅ Learned! Song ID: ${data.song_id}`;
+                } else { showError(data.detail || "Failed to process song link."); }
+            } catch (e) { showError("Upload failed. Check connection."); }
         }
 
         function showError(msg) {
@@ -270,5 +277,4 @@
         }
     </script>
 </body>
-      </html>
-          
+</html>
