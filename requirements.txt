@@ -5,7 +5,6 @@ faiss-cpu==1.8.0
 librosa==0.10.1
 google-genai>=0.1.0
 requests==2.31.0
-yt-dlp>=2024.03.10
 redis==5.0.3
 pydantic==2.6.4
 prometheus-client==0.20.0
