@@ -368,7 +368,8 @@ async def identify_song(background_tasks: BackgroundTasks, response: Response, f
                 new_song_id = cursor.fetchone()[0]
                 conn.close()
 
-                saved_song = search_engine.save_song_to_local(new_song_id, title, artist, audio_bytes)
+                preview = await asyncio.to_thread(deezer.preview_bytes, title, artist)
+                saved_song = search_engine.save_song_to_local(new_song_id, title, artist, preview)
                 background_tasks.add_task(background_internet_enrichment_task, new_song_id, title, artist)
 
                 match_resp = MatchResponse(
