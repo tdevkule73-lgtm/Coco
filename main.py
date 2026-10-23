@@ -1,3 +1,4 @@
+import deezer
 import os
 import io
 import json
@@ -51,6 +52,13 @@ class MatchResponse(BaseModel):
     message: str = Field(..., example="Song identified successfully!")
 
 def get_audio_stream_from_url(video_url: str, title: str = "", artist: str = "") -> bytes:
+    audio = deezer.preview_bytes(title, artist)
+    if not audio:
+        raise ValueError("No preview found.")
+    return audio
+
+
+def old_get_audio_stream_from_url(video_url: str, title: str = "", artist: str = "") -> bytes:
     import yt_dlp
 
     ydl_opts = {
